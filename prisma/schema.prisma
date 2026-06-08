@@ -1,0 +1,82 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Gender {
+  M
+  F
+}
+
+model User {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String?
+  phoneNumber String    @unique
+  email       String?   @unique
+  gender      Gender?
+  dateOfBirth DateTime? @db.Date
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Otp {
+  id          String   @id @default(uuid()) @db.Uuid
+  phoneNumber String
+  otp         String
+  expiresAt   DateTime
+  isUsed      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@map("otps")
+}
+
+model Sport {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sports")
+}
+
+model City {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  state     String
+  country   String
+  placeId   String   @unique
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  venues Venue[]
+
+  @@map("cities")
+}
+
+model Venue {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  cityId    String   @db.Uuid
+  city      City     @relation(fields: [cityId], references: [id])
+  address   String?
+  latitude  Float?
+  longitude Float?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("venues")
+}
