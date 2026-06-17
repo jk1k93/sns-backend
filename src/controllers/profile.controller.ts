@@ -1,19 +1,31 @@
 import type { Request, Response } from "express";
 import { Gender, Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../db.js";
+import { parseDateOnly } from "../helpers/date.helper.js";
 
-function parseDateOnly(input: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.trim());
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mo = Number(m[2]);
-  const d = Number(m[3]);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
-  const dt = new Date(Date.UTC(y, mo - 1, d));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) {
-    return null;
+export async function searchUserByPhone(req: Request, res: Response): Promise<void> {
+  const phone = req.query.phone;
+  if (typeof phone !== "string" || !phone.trim()) {
+    res.status(400).json({ error: "phone query parameter is required" });
+    return;
   }
-  return dt;
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { phoneNumber: phone.trim() },
+      select: { id: true, name: true, phoneNumber: true, email: true },
+    });
+
+    if (!user) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    res.status(200).json({ message: "User fetched successfully", data: user });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to search user" });
+  }
 }
 
 export async function getProfile(req: Request, res: Response): Promise<void> {

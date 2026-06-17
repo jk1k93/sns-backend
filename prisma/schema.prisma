@@ -17,6 +17,23 @@ enum Gender {
   F
 }
 
+enum TournamentStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  ARCHIVED
+}
+
+enum GroundType {
+  BOX
+  OPEN
+}
+
+enum BallType {
+  TENNIS
+  LEATHER
+}
+
 model User {
   id          String    @id @default(uuid()) @db.Uuid
   name        String?
@@ -24,8 +41,12 @@ model User {
   email       String?   @unique
   gender      Gender?
   dateOfBirth DateTime? @db.Date
+  isDeleted   Boolean   @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  tournaments         Tournament[]
+  tournamentContacts  TournamentContact[]
 
   @@map("users")
 }
@@ -47,6 +68,8 @@ model Sport {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  tournaments Tournament[]
 
   @@map("sports")
 }
@@ -78,5 +101,64 @@ model Venue {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  tournaments Tournament[]
+
   @@map("venues")
+}
+
+model Tournament {
+  id                      String    @id @default(uuid()) @db.Uuid
+  name                    String
+  venueId                 String    @db.Uuid
+  venue                   Venue     @relation(fields: [venueId], references: [id])
+  organiserId             String    @db.Uuid
+  organiser               User      @relation(fields: [organiserId], references: [id])
+  sportId                 String    @db.Uuid
+  sport                   Sport     @relation(fields: [sportId], references: [id])
+  tournamentStartDate     DateTime? @db.Date
+  tournamentEndDate       DateTime? @db.Date
+  registrationStartDate   DateTime? @db.Date
+  registrationEndDate     DateTime? @db.Date
+  description             String?
+  status                  TournamentStatus @default(DRAFT)
+  isDeleted               Boolean   @default(false)
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  contacts      TournamentContact[]
+  cricketConfig CricketConfig?
+
+  @@map("tournaments")
+}
+
+model TournamentContact {
+  id           String     @id @default(uuid()) @db.Uuid
+  tournamentId String     @db.Uuid
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  userId       String     @db.Uuid
+  user         User       @relation(fields: [userId], references: [id])
+  isDeleted    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([tournamentId, userId])
+  @@map("tournament_contacts")
+}
+
+model CricketConfig {
+  id             String     @id @default(uuid()) @db.Uuid
+  tournamentId   String     @unique @db.Uuid
+  tournament     Tournament @relation(fields: [tournamentId], references: [id])
+  groundType     GroundType
+  ballType       BallType
+  numberOfTeams  Int
+  playersPerTeam Int
+  auctionBased      Boolean  @default(false)
+  auctionPurse      Int?
+  playerBasePrice   Int?
+  isDeleted      Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@map("cricket_configs")
 }

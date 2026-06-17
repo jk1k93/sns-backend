@@ -24,7 +24,8 @@ type VenuePayload = {
 };
 
 export async function searchVenues(req: Request, res: Response): Promise<void> {
-  const qRaw = queryString(req.query.q);
+  const q = req.query.q;
+  const qRaw = queryString(typeof q === "string" ? q : undefined);
   const term = qRaw?.trim() ?? "";
 
   const where: Prisma.VenueWhereInput =
@@ -59,11 +60,11 @@ export async function searchVenues(req: Request, res: Response): Promise<void> {
 export async function createVenue(req: Request, res: Response): Promise<void> {
   const venuePayload: Partial<VenuePayload> | undefined =
     req.body?.venue && typeof req.body.venue === "object"
-      ? (req.body.venue as Partial<VenuePayload>)
+      ? req.body.venue
       : undefined;
   const cityPayload: Partial<CityInput> | undefined =
     req.body?.city && typeof req.body.city === "object"
-      ? (req.body.city as Partial<CityInput>)
+      ? req.body.city
       : undefined;
 
   const nameRaw = venuePayload?.name;

@@ -1,31 +1,11 @@
 import type { Request, Response } from "express";
 import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../db.js";
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isUuid(value: string): boolean {
-  return UUID_RE.test(value);
-}
-
-function paramId(value: string | string[] | undefined): string | undefined {
-  if (value === undefined) return undefined;
-  return typeof value === "string" ? value : value[0];
-}
-
-function queryFlag(value: unknown): boolean {
-  const v =
-    typeof value === "string"
-      ? value
-      : Array.isArray(value) && typeof value[0] === "string"
-        ? value[0]
-        : undefined;
-  return v === "true" || v === "1";
-}
+import { isUuid, paramId, queryFlag } from "../helpers/query.helper.js";
 
 export async function listSports(req: Request, res: Response): Promise<void> {
-  const activeOnly = queryFlag(req.query.activeOnly);
+  const activeOnlyParam = req.query.activeOnly;
+  const activeOnly = queryFlag(typeof activeOnlyParam === "string" ? activeOnlyParam : undefined);
 
   try {
     const sports = await prisma.sport.findMany({

@@ -1,25 +1,7 @@
-import crypto from "node:crypto";
 import type { Request, Response } from "express";
 import jwt, { type SignOptions } from "jsonwebtoken";
 import { prisma } from "../db.js";
-
-const OTP_TTL_MS = 10 * 60 * 1000;
-
-function generateOtpCode(): string {
-  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
-}
-
-function normalizePhone(phone: unknown): string | null {
-  if (typeof phone !== "string") return null;
-  const trimmed = phone.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeOtp(input: unknown): string | null {
-  if (typeof input !== "string") return null;
-  const trimmed = input.trim();
-  return /^\d{6}$/.test(trimmed) ? trimmed : null;
-}
+import { generateOtpCode, normalizeOtp, normalizePhone, OTP_TTL_MS } from "../helpers/auth.helper.js";
 
 export async function login(req: Request, res: Response): Promise<void> {
   const phoneNumber = normalizePhone(req.body?.phoneNumber);
