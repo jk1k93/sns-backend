@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { Prisma, TournamentStatus } from "../../generated/prisma/client.js";
 import { prisma } from "../db.js";
+import { haversineKm } from "../helpers/coordinate.helper.js";
 import { parseDate } from "../helpers/date.helper.js";
 import { isUuid, paramId } from "../helpers/query.helper.js";
 
@@ -81,9 +82,48 @@ async function resolveContactIdsInTx(
 }
 
 export async function listTournaments(req: Request, res: Response): Promise<void> {
+  const { lat: latRaw, lng: lngRaw, sportId } = req.query;
+
+  if (typeof sportId !== "string" || !isUuid(sportId)) {
+    res.status(400).json({ error: "sportId is required and must be a valid UUID" });
+    return;
+  }
+
+  let venueIdFilter: string[] | undefined;
+
+  if (latRaw !== undefined || lngRaw !== undefined) {
+    if (typeof latRaw !== "string" || typeof lngRaw !== "string") {
+      res.status(400).json({ error: "Both lat and lng query params are required for geo-filtering" });
+      return;
+    }
+    const lat = parseFloat(latRaw);
+    const lng = parseFloat(lngRaw);
+    if (isNaN(lat) || lat < -90 || lat > 90) {
+      res.status(400).json({ error: "lat must be a valid number between -90 and 90" });
+      return;
+    }
+    if (isNaN(lng) || lng < -180 || lng > 180) {
+      res.status(400).json({ error: "lng must be a valid number between -180 and 180" });
+      return;
+    }
+
+    const venues = await prisma.venue.findMany({
+      where: { city: { latitude: { not: null }, longitude: { not: null } } },
+      select: { id: true, city: { select: { latitude: true, longitude: true } } },
+    });
+
+    venueIdFilter = venues
+      .filter((v) => haversineKm(lat, lng, v.city.latitude!, v.city.longitude!) <= 100)
+      .map((v) => v.id);
+  }
+
   try {
     const tournaments = await prisma.tournament.findMany({
-      where: { isDeleted: false },
+      where: {
+        isDeleted: false,
+        sportId,
+        ...(venueIdFilter !== undefined ? { venueId: { in: venueIdFilter } } : {}),
+      },
       include: tournamentInclude,
       orderBy: { tournamentStartDate: "asc" },
     });
@@ -107,7 +147,13 @@ export async function getTournament(req: Request, res: Response): Promise<void> 
       res.status(404).json({ error: "Tournament not found" });
       return;
     }
-    res.status(200).json({ message: "Tournament fetched successfully", data: tournament });
+
+    const userId = req.auth!.userId;
+    const canUpdate =
+      tournament.organiserId === userId ||
+      tournament.contacts.some((c) => c.userId === userId);
+
+    res.status(200).json({ message: "Tournament fetched successfully", data: { tournament, metaData: { canUpdate } } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch tournament" });
@@ -115,11 +161,7 @@ export async function getTournament(req: Request, res: Response): Promise<void> 
 }
 
 export async function createTournament(req: Request, res: Response): Promise<void> {
-  const organiserId = req.auth?.userId;
-  if (!organiserId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  const organiserId = req.auth!.userId;
 
   const {
     name: nameRaw,

@@ -29,11 +29,7 @@ export async function searchUserByPhone(req: Request, res: Response): Promise<vo
 }
 
 export async function getProfile(req: Request, res: Response): Promise<void> {
-  const userId = req.auth?.userId;
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  const userId = req.auth!.userId;
 
   try {
     const user = await prisma.user.findUnique({
@@ -61,11 +57,7 @@ export async function getProfile(req: Request, res: Response): Promise<void> {
 }
 
 export async function updateProfile(req: Request, res: Response): Promise<void> {
-  const userId = req.auth?.userId;
-  if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+  const userId = req.auth!.userId;
 
   const nameRaw = req.body?.name;
   const genderRaw = req.body?.gender;
