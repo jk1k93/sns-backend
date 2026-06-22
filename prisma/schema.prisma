@@ -24,6 +24,21 @@ enum TournamentStatus {
   ARCHIVED
 }
 
+enum JerseySize {
+  XS
+  S
+  M
+  L
+  XL
+  XXL
+  XXXL
+}
+
+enum Hand {
+  LEFT
+  RIGHT
+}
+
 enum GroundType {
   BOX
   OPEN
@@ -47,6 +62,12 @@ model User {
 
   tournaments         Tournament[]
   tournamentContacts  TournamentContact[]
+  captainedTeams      Team[]              @relation("TeamCaptain")
+  viceCaptainedTeams  Team[]              @relation("TeamViceCaptain")
+  ownedTeams          Team[]              @relation("TeamOwner")
+  teamMemberships       TeamMember[]
+  tournamentPlayers     TournamentPlayer[]    @relation("TournamentPlayers")
+  cricketPlayerProfile  CricketPlayerProfile?
 
   @@map("users")
 }
@@ -127,6 +148,8 @@ model Tournament {
 
   contacts      TournamentContact[]
   cricketConfig CricketConfig?
+  teams         Team[]
+  players       TournamentPlayer[]
 
   @@map("tournaments")
 }
@@ -143,6 +166,94 @@ model TournamentContact {
 
   @@unique([tournamentId, userId])
   @@map("tournament_contacts")
+}
+
+model Team {
+  id           String     @id @default(uuid()) @db.Uuid
+  tournamentId String     @db.Uuid
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  name           String
+  captainId      String?    @db.Uuid
+  captain        User?      @relation("TeamCaptain", fields: [captainId], references: [id])
+  viceCaptainId  String?    @db.Uuid
+  viceCaptain    User?      @relation("TeamViceCaptain", fields: [viceCaptainId], references: [id])
+  ownerId        String     @db.Uuid
+  owner        User       @relation("TeamOwner", fields: [ownerId], references: [id])
+  logoUrl      String?
+  shortCode    String?
+  isDeleted    Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  members          TeamMember[]
+  tournamentPlayers TournamentPlayer[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  teamId    String   @db.Uuid
+  team      Team     @relation(fields: [teamId], references: [id])
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+model TournamentPlayer {
+  id           String     @id @default(uuid()) @db.Uuid
+  tournamentId String     @db.Uuid
+  tournament   Tournament @relation(fields: [tournamentId], references: [id])
+  playerId     String     @db.Uuid
+  player       User       @relation("TournamentPlayers", fields: [playerId], references: [id])
+  teamId       String?     @db.Uuid
+  team         Team?       @relation(fields: [teamId], references: [id])
+  roleId       String?     @db.Uuid
+  role         CricketRole? @relation(fields: [roleId], references: [id])
+  bidPrice     Int?
+  jerseyNumber Int?
+  jerseySize   JerseySize?
+  isDeleted    Boolean     @default(false)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@unique([tournamentId, playerId])
+  @@map("tournament_players")
+}
+
+model CricketRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cricketPlayerProfiles CricketPlayerProfile[]
+  tournamentPlayers     TournamentPlayer[]
+
+  @@map("cricket_roles")
+}
+
+model CricketPlayerProfile {
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String      @unique @db.Uuid
+  user         User        @relation(fields: [userId], references: [id])
+  roleId       String?     @db.Uuid
+  role         CricketRole? @relation(fields: [roleId], references: [id])
+  battingHand  Hand?
+  bowlingHand  Hand?
+  jerseyNumber Int?
+  jerseySize   JerseySize?
+  isDeleted    Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@map("cricket_player_profiles")
 }
 
 model CricketConfig {

@@ -13,6 +13,20 @@ const tournamentInclude = {
   cricketConfig: { where: { isDeleted: false } },
 } as const;
 
+const memberUserSelect = { id: true, name: true, phoneNumber: true, email: true } as const;
+
+const tournamentDetailInclude = {
+  venue: { include: { city: true } },
+  organiser: { select: memberUserSelect },
+  sport: true,
+  contacts: { where: { isDeleted: false }, include: { user: { select: memberUserSelect } } },
+  cricketConfig: { where: { isDeleted: false } },
+  teams: {
+    where: { isDeleted: false },
+    orderBy: { createdAt: "asc" as const },
+  },
+} as const;
+
 type ValidatedContact =
   | { kind: "userId"; userId: string }
   | { kind: "details"; name: string; phone: string };
@@ -142,7 +156,7 @@ export async function getTournament(req: Request, res: Response): Promise<void> 
   }
 
   try {
-    const tournament = await prisma.tournament.findUnique({ where: { id, isDeleted: false }, include: tournamentInclude });
+    const tournament = await prisma.tournament.findUnique({ where: { id, isDeleted: false }, include: tournamentDetailInclude });
     if (!tournament) {
       res.status(404).json({ error: "Tournament not found" });
       return;

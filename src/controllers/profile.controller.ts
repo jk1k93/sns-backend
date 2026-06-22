@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { Gender, Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../db.js";
 import { parseDateOnly } from "../helpers/date.helper.js";
+import { isUuid, queryString } from "../helpers/query.helper.js";
 
 export async function searchUserByPhone(req: Request, res: Response): Promise<void> {
   const phone = req.query.phone;
@@ -10,10 +11,49 @@ export async function searchUserByPhone(req: Request, res: Response): Promise<vo
     return;
   }
 
+  const sportIdParam = req.query.sportId;
+  const sportIdRaw = queryString(typeof sportIdParam === "string" ? sportIdParam : undefined);
+  if (sportIdRaw !== undefined && !isUuid(sportIdRaw)) {
+    res.status(400).json({ error: "sportId must be a valid UUID" });
+    return;
+  }
+
   try {
+    let isCricket = false;
+    if (sportIdRaw !== undefined) {
+      const sport = await prisma.sport.findUnique({
+        where: { id: sportIdRaw },
+        select: { name: true },
+      });
+      if (!sport) {
+        res.status(400).json({ error: "Sport not found" });
+        return;
+      }
+      isCricket = sport.name.toLowerCase() === "cricket";
+    }
+
     const user = await prisma.user.findUnique({
       where: { phoneNumber: phone.trim() },
-      select: { id: true, name: true, phoneNumber: true, email: true },
+      select: {
+        id: true,
+        name: true,
+        phoneNumber: true,
+        email: true,
+        ...(isCricket && {
+          cricketPlayerProfile: {
+            where: { isDeleted: false },
+            select: {
+              id: true,
+              roleId: true,
+              role: { select: { id: true, name: true } },
+              battingHand: true,
+              bowlingHand: true,
+              jerseyNumber: true,
+              jerseySize: true,
+            },
+          },
+        }),
+      },
     });
 
     if (!user) {
