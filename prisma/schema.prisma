@@ -177,8 +177,8 @@ model Team {
   captain        User?      @relation("TeamCaptain", fields: [captainId], references: [id])
   viceCaptainId  String?    @db.Uuid
   viceCaptain    User?      @relation("TeamViceCaptain", fields: [viceCaptainId], references: [id])
-  ownerId        String     @db.Uuid
-  owner        User       @relation("TeamOwner", fields: [ownerId], references: [id])
+  ownerId        String?    @db.Uuid
+  owner        User?      @relation("TeamOwner", fields: [ownerId], references: [id])
   logoUrl      String?
   shortCode    String?
   isDeleted    Boolean    @default(false)

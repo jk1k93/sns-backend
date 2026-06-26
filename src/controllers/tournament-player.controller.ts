@@ -146,16 +146,22 @@ export async function addTournamentPlayer(req: Request, res: Response): Promise<
 
       const existing = await tx.tournamentPlayer.findUnique({
         where: { tournamentId_playerId: { tournamentId, playerId: playerIdRaw } },
-        select: { id: true },
+        select: { id: true, isDeleted: true },
       });
-      if (existing) {
+      if (existing && !existing.isDeleted) {
         throw Object.assign(new Error("Player is already registered in this tournament"), { statusCode: 409 });
       }
 
-      const tournamentPlayer = await tx.tournamentPlayer.create({
-        data: { tournamentId, playerId: playerIdRaw, roleId, jerseyNumber, jerseySize },
-        include: tournamentPlayerInclude,
-      });
+      const tournamentPlayer = existing
+        ? await tx.tournamentPlayer.update({
+            where: { id: existing.id },
+            data: { isDeleted: false, teamId: null, bidPrice: null, roleId, jerseyNumber, jerseySize },
+            include: tournamentPlayerInclude,
+          })
+        : await tx.tournamentPlayer.create({
+            data: { tournamentId, playerId: playerIdRaw, roleId, jerseyNumber, jerseySize },
+            include: tournamentPlayerInclude,
+          });
 
       // Backfill CricketPlayerProfile for any fields the client sent that aren't already set there
       if (roleId !== null || jerseyNumber !== null || jerseySize !== null) {

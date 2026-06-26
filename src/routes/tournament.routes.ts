@@ -10,7 +10,7 @@ import { requireAuth } from "../middleware/auth.middleware.js";
 
 export const tournamentRouter = Router();
 
-tournamentRouter.get("/", listTournaments);
+tournamentRouter.get("/", requireAuth, listTournaments);
 tournamentRouter.get("/:id", requireAuth, getTournament);
 tournamentRouter.post("/", requireAuth, createTournament);
 tournamentRouter.patch("/:id", requireAuth, updateTournament);

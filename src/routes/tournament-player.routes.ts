@@ -10,8 +10,8 @@ import { requireAuth } from "../middleware/auth.middleware.js";
 
 export const tournamentPlayerRouter = Router({ mergeParams: true });
 
-tournamentPlayerRouter.get("/", listTournamentPlayers);
-tournamentPlayerRouter.get("/:id", getTournamentPlayer);
+tournamentPlayerRouter.get("/", requireAuth, listTournamentPlayers);
+tournamentPlayerRouter.get("/:id", requireAuth, getTournamentPlayer);
 tournamentPlayerRouter.post("/", requireAuth, addTournamentPlayer);
 tournamentPlayerRouter.patch("/:id", requireAuth, updateTournamentPlayer);
 tournamentPlayerRouter.delete("/:id", requireAuth, removeTournamentPlayer);

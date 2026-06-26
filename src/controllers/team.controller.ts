@@ -61,11 +61,19 @@ async function ensureTournamentPlayer(
   playerId: string,
   tx: Prisma.TransactionClient,
 ): Promise<void> {
-  await tx.tournamentPlayer.upsert({
+  const existing = await tx.tournamentPlayer.findUnique({
     where: { tournamentId_playerId: { tournamentId, playerId } },
-    update: { isDeleted: false },
-    create: { tournamentId, playerId },
+    select: { isDeleted: true },
   });
+  if (existing && !existing.isDeleted) return;
+  if (existing) {
+    await tx.tournamentPlayer.update({
+      where: { tournamentId_playerId: { tournamentId, playerId } },
+      data: { isDeleted: false },
+    });
+  } else {
+    await tx.tournamentPlayer.create({ data: { tournamentId, playerId } });
+  }
 }
 
 function getTournamentId(req: Request): string | undefined {
@@ -246,7 +254,7 @@ export async function createTeam(req: Request, res: Response): Promise<void> {
 
       const ownerId = ownerRef !== null
         ? await resolveUserRefInTx(ownerRef, "owner", tx)
-        : req.auth!.userId;
+        : null;
 
       const newTeam = await tx.team.create({
         data: { tournamentId, name: nameRaw.trim(), captainId, viceCaptainId, ownerId, logoUrl, shortCode },

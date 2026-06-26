@@ -10,8 +10,8 @@ import { requireAuth } from "../middleware/auth.middleware.js";
 
 export const teamRouter = Router({ mergeParams: true });
 
-teamRouter.get("/", listTeams);
-teamRouter.get("/:id", getTeam);
+teamRouter.get("/", requireAuth, listTeams);
+teamRouter.get("/:id", requireAuth, getTeam);
 teamRouter.post("/", requireAuth, createTeam);
 teamRouter.patch("/:id", requireAuth, updateTeam);
 teamRouter.delete("/:id", requireAuth, deleteTeam);

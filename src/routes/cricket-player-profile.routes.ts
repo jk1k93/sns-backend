@@ -9,7 +9,7 @@ import { requireAuth } from "../middleware/auth.middleware.js";
 
 export const cricketPlayerProfileRouter = Router();
 
-cricketPlayerProfileRouter.get("/:userId", getCricketPlayerProfile);
+cricketPlayerProfileRouter.get("/:userId", requireAuth, getCricketPlayerProfile);
 cricketPlayerProfileRouter.post("/", requireAuth, createCricketPlayerProfile);
 cricketPlayerProfileRouter.patch("/:userId", requireAuth, updateCricketPlayerProfile);
 cricketPlayerProfileRouter.delete("/:userId", requireAuth, deleteCricketPlayerProfile);
