@@ -11,7 +11,7 @@ export async function getCricketConfig(req: Request, res: Response): Promise<voi
   }
 
   try {
-    const config = await prisma.cricketConfig.findUnique({ where: { tournamentId } });
+    const config = await prisma.cricketTournamentConfig.findUnique({ where: { tournamentId } });
     if (!config || config.isDeleted) {
       res.status(404).json({ error: "Cricket config not found" });
       return;
@@ -92,7 +92,7 @@ export async function createCricketConfig(req: Request, res: Response): Promise<
       return;
     }
 
-    const existing = await prisma.cricketConfig.findUnique({ where: { tournamentId } });
+    const existing = await prisma.cricketTournamentConfig.findUnique({ where: { tournamentId } });
     if (existing && !existing.isDeleted) {
       res.status(409).json({ error: "Cricket config already exists for this tournament" });
       return;
@@ -109,8 +109,8 @@ export async function createCricketConfig(req: Request, res: Response): Promise<
     };
 
     const config = existing
-      ? await prisma.cricketConfig.update({ where: { tournamentId }, data: { ...configData, isDeleted: false } })
-      : await prisma.cricketConfig.create({ data: { tournamentId, ...configData } });
+      ? await prisma.cricketTournamentConfig.update({ where: { tournamentId }, data: { ...configData, isDeleted: false } })
+      : await prisma.cricketTournamentConfig.create({ data: { tournamentId, ...configData } });
 
     res.status(201).json({ message: "Cricket config created successfully", data: config });
   } catch (e) {
@@ -209,13 +209,13 @@ export async function updateCricketConfig(req: Request, res: Response): Promise<
   }
 
   try {
-    const config = await prisma.cricketConfig.findUnique({ where: { tournamentId } });
+    const config = await prisma.cricketTournamentConfig.findUnique({ where: { tournamentId } });
     if (!config || config.isDeleted) {
       res.status(404).json({ error: "Cricket config not found" });
       return;
     }
 
-    const updated = await prisma.cricketConfig.update({ where: { tournamentId }, data });
+    const updated = await prisma.cricketTournamentConfig.update({ where: { tournamentId }, data });
     res.status(200).json({ message: "Cricket config updated successfully", data: updated });
   } catch (e) {
     console.error(e);
@@ -231,13 +231,13 @@ export async function deleteCricketConfig(req: Request, res: Response): Promise<
   }
 
   try {
-    const config = await prisma.cricketConfig.findUnique({ where: { tournamentId } });
+    const config = await prisma.cricketTournamentConfig.findUnique({ where: { tournamentId } });
     if (!config || config.isDeleted) {
       res.status(404).json({ error: "Cricket config not found" });
       return;
     }
 
-    await prisma.cricketConfig.update({ where: { tournamentId }, data: { isDeleted: true } });
+    await prisma.cricketTournamentConfig.update({ where: { tournamentId }, data: { isDeleted: true } });
     res.status(200).json({ message: "Cricket config deleted successfully" });
   } catch (e) {
     console.error(e);

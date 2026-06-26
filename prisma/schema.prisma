@@ -18,10 +18,10 @@ enum Gender {
 }
 
 enum TournamentStatus {
-  DRAFT
   PUBLISHED
+  LIVE
   CANCELLED
-  ARCHIVED
+  COMPLETED
 }
 
 enum JerseySize {
@@ -141,13 +141,13 @@ model Tournament {
   registrationStartDate   DateTime? @db.Date
   registrationEndDate     DateTime? @db.Date
   description             String?
-  status                  TournamentStatus @default(DRAFT)
+  status                  TournamentStatus @default(PUBLISHED)
   isDeleted               Boolean   @default(false)
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
   contacts      TournamentContact[]
-  cricketConfig CricketConfig?
+  cricketTournamentConfig CricketTournamentConfig?
   teams         Team[]
   players       TournamentPlayer[]
 
@@ -256,7 +256,7 @@ model CricketPlayerProfile {
   @@map("cricket_player_profiles")
 }
 
-model CricketConfig {
+model CricketTournamentConfig {
   id             String     @id @default(uuid()) @db.Uuid
   tournamentId   String     @unique @db.Uuid
   tournament     Tournament @relation(fields: [tournamentId], references: [id])
@@ -271,5 +271,5 @@ model CricketConfig {
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 
-  @@map("cricket_configs")
+  @@map("cricket_tournament_config")
 }

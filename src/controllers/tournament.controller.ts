@@ -10,7 +10,7 @@ const tournamentInclude = {
   organiser: { select: { id: true, name: true, phoneNumber: true, email: true } },
   sport: true,
   contacts: { where: { isDeleted: false }, include: { user: { select: { id: true, name: true, phoneNumber: true, email: true } } } },
-  cricketConfig: { where: { isDeleted: false } },
+  cricketTournamentConfig: { where: { isDeleted: false } },
 } as const;
 
 const memberUserSelect = { id: true, name: true, phoneNumber: true, email: true } as const;
@@ -20,7 +20,7 @@ const tournamentDetailInclude = {
   organiser: { select: memberUserSelect },
   sport: true,
   contacts: { where: { isDeleted: false }, include: { user: { select: memberUserSelect } } },
-  cricketConfig: { where: { isDeleted: false } },
+  cricketTournamentConfig: { where: { isDeleted: false } },
   teams: {
     where: { isDeleted: false },
     orderBy: { createdAt: "asc" as const },
@@ -137,6 +137,7 @@ export async function listTournaments(req: Request, res: Response): Promise<void
         isDeleted: false,
         sportId,
         ...(venueIdFilter !== undefined ? { venueId: { in: venueIdFilter } } : {}),
+        status: { not: TournamentStatus.CANCELLED },
       },
       include: tournamentInclude,
       orderBy: { tournamentStartDate: "asc" },
@@ -158,6 +159,11 @@ export async function getTournament(req: Request, res: Response): Promise<void> 
   try {
     const tournament = await prisma.tournament.findUnique({ where: { id, isDeleted: false }, include: tournamentDetailInclude });
     if (!tournament) {
+      res.status(404).json({ error: "Tournament not found" });
+      return;
+    }
+
+    if (tournament.status === TournamentStatus.CANCELLED) {
       res.status(404).json({ error: "Tournament not found" });
       return;
     }
@@ -465,7 +471,7 @@ export async function deleteTournament(req: Request, res: Response): Promise<voi
     }
     await prisma.$transaction([
       prisma.tournament.update({ where: { id }, data: { isDeleted: true } }),
-      prisma.cricketConfig.updateMany({ where: { tournamentId: id, isDeleted: false }, data: { isDeleted: true } }),
+      prisma.cricketTournamentConfig.updateMany({ where: { tournamentId: id, isDeleted: false }, data: { isDeleted: true } }),
     ]);
     res.status(200).json({ message: "Tournament deleted successfully" });
   } catch (e) {
