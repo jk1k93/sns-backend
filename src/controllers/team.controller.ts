@@ -9,9 +9,12 @@ const teamInclude = {
   captain: { select: userSelect },
   viceCaptain: { select: userSelect },
   owner: { select: userSelect },
-  members: {
+  tournamentPlayers: {
     where: { isDeleted: false },
-    include: { user: { select: userSelect } },
+    include: {
+      player: { select: userSelect },
+      role: { select: { id: true, name: true } },
+    },
   },
 } as const;
 
@@ -60,19 +63,28 @@ async function ensureTournamentPlayer(
   tournamentId: string,
   playerId: string,
   tx: Prisma.TransactionClient,
+  teamId?: string,
 ): Promise<void> {
   const existing = await tx.tournamentPlayer.findUnique({
     where: { tournamentId_playerId: { tournamentId, playerId } },
     select: { isDeleted: true },
   });
-  if (existing && !existing.isDeleted) return;
+  if (existing && !existing.isDeleted) {
+    if (teamId !== undefined) {
+      await tx.tournamentPlayer.update({
+        where: { tournamentId_playerId: { tournamentId, playerId } },
+        data: { teamId },
+      });
+    }
+    return;
+  }
   if (existing) {
     await tx.tournamentPlayer.update({
       where: { tournamentId_playerId: { tournamentId, playerId } },
-      data: { isDeleted: false },
+      data: { isDeleted: false, ...(teamId !== undefined ? { teamId } : {}) },
     });
   } else {
-    await tx.tournamentPlayer.create({ data: { tournamentId, playerId } });
+    await tx.tournamentPlayer.create({ data: { tournamentId, playerId, ...(teamId !== undefined ? { teamId } : {}) } });
   }
 }
 
@@ -261,15 +273,11 @@ export async function createTeam(req: Request, res: Response): Promise<void> {
         select: { id: true },
       });
 
-      if (captainId !== null) await ensureTournamentPlayer(tournamentId, captainId, tx);
-      if (viceCaptainId !== null) await ensureTournamentPlayer(tournamentId, viceCaptainId, tx);
+      if (captainId !== null) await ensureTournamentPlayer(tournamentId, captainId, tx, newTeam.id);
+      if (viceCaptainId !== null) await ensureTournamentPlayer(tournamentId, viceCaptainId, tx, newTeam.id);
 
       for (const userId of memberIds) {
-        await tx.teamMember.upsert({
-          where: { teamId_userId: { teamId: newTeam.id, userId } },
-          update: { isDeleted: false },
-          create: { teamId: newTeam.id, userId },
-        });
+        await ensureTournamentPlayer(tournamentId, userId, tx, newTeam.id);
       }
 
       return tx.team.findUnique({ where: { id: newTeam.id }, include: teamInclude });
@@ -346,11 +354,15 @@ export async function updateTeam(req: Request, res: Response): Promise<void> {
     }
   }
 
-  let ownerRef: UserRef | undefined;
+  let ownerRef: UserRef | null | undefined;
   if (ownerRaw !== undefined) {
-    const result = parseUserRef(ownerRaw, "owner");
-    if ("error" in result) { res.status(400).json({ error: result.error }); return; }
-    ownerRef = result.ref;
+    if (ownerRaw === null) {
+      ownerRef = null;
+    } else {
+      const result = parseUserRef(ownerRaw, "owner");
+      if ("error" in result) { res.status(400).json({ error: result.error }); return; }
+      ownerRef = result.ref;
+    }
   }
 
   if (logoUrlRaw !== undefined) {
@@ -421,7 +433,7 @@ export async function updateTeam(req: Request, res: Response): Promise<void> {
         } else {
           const captainId = await resolveUserRefInTx(captainRef, "captain", tx);
           data.captain = { connect: { id: captainId } };
-          await ensureTournamentPlayer(tournamentId, captainId, tx);
+          await ensureTournamentPlayer(tournamentId, captainId, tx, id);
         }
       }
 
@@ -431,23 +443,26 @@ export async function updateTeam(req: Request, res: Response): Promise<void> {
         } else {
           const viceCaptainId = await resolveUserRefInTx(viceCaptainRef, "viceCaptain", tx);
           data.viceCaptain = { connect: { id: viceCaptainId } };
-          await ensureTournamentPlayer(tournamentId, viceCaptainId, tx);
+          await ensureTournamentPlayer(tournamentId, viceCaptainId, tx, id);
         }
       }
 
       if (ownerRef !== undefined) {
-        const ownerId = await resolveUserRefInTx(ownerRef, "owner", tx);
-        data.owner = { connect: { id: ownerId } };
+        if (ownerRef === null) {
+          data.owner = { disconnect: true };
+        } else {
+          const ownerId = await resolveUserRefInTx(ownerRef, "owner", tx);
+          data.owner = { connect: { id: ownerId } };
+        }
       }
 
       if (memberIds !== undefined) {
-        await tx.teamMember.updateMany({ where: { teamId: id }, data: { isDeleted: true } });
+        await tx.tournamentPlayer.updateMany({
+          where: { teamId: id, tournamentId, isDeleted: false },
+          data: { teamId: null },
+        });
         for (const userId of memberIds) {
-          await tx.teamMember.upsert({
-            where: { teamId_userId: { teamId: id, userId } },
-            update: { isDeleted: false },
-            create: { teamId: id, userId },
-          });
+          await ensureTournamentPlayer(tournamentId, userId, tx, id);
         }
       }
 
@@ -492,10 +507,20 @@ export async function deleteTeam(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    await prisma.$transaction([
-      prisma.team.update({ where: { id }, data: { isDeleted: true } }),
-      prisma.teamMember.updateMany({ where: { teamId: id, isDeleted: false }, data: { isDeleted: true } }),
-    ]);
+    const config = await prisma.cricketTournamentConfig.findUnique({
+      where: { tournamentId },
+      select: { auctionBased: true, isDeleted: true },
+    });
+    const isAuctionBased = config !== null && !config.isDeleted && config.auctionBased;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.team.update({ where: { id }, data: { isDeleted: true } });
+      if (!isAuctionBased) {
+        await tx.tournamentPlayer.updateMany({ where: { teamId: id, isDeleted: false }, data: { isDeleted: true } });
+      } else {
+        await tx.tournamentPlayer.updateMany({ where: { teamId: id, isDeleted: false }, data: { teamId: null } });
+      }
+    });
 
     res.status(200).json({ message: "Team deleted successfully" });
   } catch (e) {

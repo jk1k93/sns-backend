@@ -39,6 +39,11 @@ enum Hand {
   RIGHT
 }
 
+enum AuctionStatus {
+  SOLD
+  UNSOLD
+}
+
 enum GroundType {
   BOX
   OPEN
@@ -65,7 +70,6 @@ model User {
   captainedTeams      Team[]              @relation("TeamCaptain")
   viceCaptainedTeams  Team[]              @relation("TeamViceCaptain")
   ownedTeams          Team[]              @relation("TeamOwner")
-  teamMemberships       TeamMember[]
   tournamentPlayers     TournamentPlayer[]    @relation("TournamentPlayers")
   cricketPlayerProfile  CricketPlayerProfile?
 
@@ -185,24 +189,9 @@ model Team {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  members          TeamMember[]
   tournamentPlayers TournamentPlayer[]
 
   @@map("teams")
-}
-
-model TeamMember {
-  id        String   @id @default(uuid()) @db.Uuid
-  teamId    String   @db.Uuid
-  team      Team     @relation(fields: [teamId], references: [id])
-  userId    String   @db.Uuid
-  user      User     @relation(fields: [userId], references: [id])
-  isDeleted Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([teamId, userId])
-  @@map("team_members")
 }
 
 model TournamentPlayer {
@@ -215,10 +204,13 @@ model TournamentPlayer {
   team         Team?       @relation(fields: [teamId], references: [id])
   roleId       String?     @db.Uuid
   role         CricketRole? @relation(fields: [roleId], references: [id])
-  bidPrice     Int?
-  jerseyNumber Int?
-  jerseySize   JerseySize?
-  isDeleted    Boolean     @default(false)
+  bidPrice       Int?
+  jerseyNumber   Int?
+  jerseyName     String?
+  jerseySize     JerseySize?
+  auctionStatus  AuctionStatus?
+  auctionRound   Int?
+  isDeleted      Boolean     @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 

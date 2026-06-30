@@ -1,9 +1,17 @@
 import type { Request, Response } from "express";
-import { JerseySize, Prisma } from "../../generated/prisma/client.js";
+import { AuctionStatus, JerseySize, Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../db.js";
 import { isUuid, paramId } from "../helpers/query.helper.js";
 
 const JERSEY_SIZES = new Set<string>(Object.values(JerseySize));
+const AUCTION_STATUSES = new Set<string>(Object.values(AuctionStatus));
+
+function parseAuctionStatus(raw: unknown): { status: AuctionStatus } | { error: string } {
+  if (typeof raw !== "string" || !AUCTION_STATUSES.has(raw)) {
+    return { error: `auctionStatus must be one of: ${[...AUCTION_STATUSES].join(", ")}` };
+  }
+  return { status: raw as AuctionStatus };
+}
 
 function parseJerseySize(raw: unknown): { size: JerseySize } | { error: string } {
   if (typeof raw !== "string" || !JERSEY_SIZES.has(raw)) {
@@ -24,11 +32,44 @@ function getTournamentId(req: Request): string | undefined {
   return raw;
 }
 
+type ValidatedPlayer =
+  | { kind: "userId"; userId: string }
+  | { kind: "details"; name: string; phone: string };
+
+function parsePlayer(body: Record<string, unknown>): { player: ValidatedPlayer } | { error: string } {
+  if ("userId" in body) {
+    if (typeof body.userId !== "string" || !isUuid(body.userId)) {
+      return { error: "userId must be a valid UUID" };
+    }
+    return { player: { kind: "userId", userId: body.userId } };
+  }
+  if ("phone" in body || "name" in body) {
+    if (typeof body.phone !== "string" || !body.phone.trim()) {
+      return { error: "phone must be a non-empty string" };
+    }
+    if (typeof body.name !== "string" || !body.name.trim()) {
+      return { error: "name must be a non-empty string" };
+    }
+    return { player: { kind: "details", name: body.name.trim(), phone: body.phone.trim() } };
+  }
+  return { error: 'player must be identified by "userId" or by "phone" and "name"' };
+}
+
 export async function listTournamentPlayers(req: Request, res: Response): Promise<void> {
   const tournamentId = getTournamentId(req);
   if (!tournamentId) {
     res.status(400).json({ error: "Invalid tournament id" });
     return;
+  }
+
+  const teamIdRaw = req.query.teamId;
+  let teamId: string | undefined;
+  if (teamIdRaw !== undefined) {
+    if (typeof teamIdRaw !== "string" || !isUuid(teamIdRaw)) {
+      res.status(400).json({ error: "teamId must be a valid UUID" });
+      return;
+    }
+    teamId = teamIdRaw;
   }
 
   try {
@@ -41,8 +82,19 @@ export async function listTournamentPlayers(req: Request, res: Response): Promis
       return;
     }
 
+    if (teamId !== undefined) {
+      const team = await prisma.team.findUnique({
+        where: { id: teamId },
+        select: { id: true, isDeleted: true, tournamentId: true },
+      });
+      if (!team || team.isDeleted || team.tournamentId !== tournamentId) {
+        res.status(404).json({ error: "Team not found" });
+        return;
+      }
+    }
+
     const players = await prisma.tournamentPlayer.findMany({
-      where: { tournamentId, isDeleted: false },
+      where: { tournamentId, isDeleted: false, ...(teamId !== undefined ? { teamId } : {}) },
       include: tournamentPlayerInclude,
       orderBy: { createdAt: "asc" },
     });
@@ -91,16 +143,32 @@ export async function addTournamentPlayer(req: Request, res: Response): Promise<
     return;
   }
 
-  const {
-    playerId: playerIdRaw,
-    roleId: roleIdRaw,
-    jerseyNumber: jerseyNumberRaw,
-    jerseySize: jerseySizeRaw,
-  } = req.body ?? {};
-
-  if (typeof playerIdRaw !== "string" || !isUuid(playerIdRaw)) {
-    res.status(400).json({ error: "playerId must be a valid UUID" });
+  const body: Record<string, unknown> = req.body ?? {};
+  const playerResult = parsePlayer(body);
+  if ("error" in playerResult) {
+    res.status(400).json({ error: playerResult.error });
     return;
+  }
+  const validatedPlayer = playerResult.player;
+
+  const {
+    teamId: teamIdRaw,
+    roleId: roleIdRaw,
+    bidPrice: bidPriceRaw,
+    jerseyNumber: jerseyNumberRaw,
+    jerseyName: jerseyNameRaw,
+    jerseySize: jerseySizeRaw,
+    auctionStatus: auctionStatusRaw,
+    auctionRound: auctionRoundRaw,
+  } = body;
+
+  let teamId: string | null = null;
+  if (teamIdRaw !== undefined) {
+    if (typeof teamIdRaw !== "string" || !isUuid(teamIdRaw)) {
+      res.status(400).json({ error: "teamId must be a valid UUID" });
+      return;
+    }
+    teamId = teamIdRaw;
   }
 
   let roleId: string | null = null;
@@ -112,6 +180,15 @@ export async function addTournamentPlayer(req: Request, res: Response): Promise<
     roleId = roleIdRaw;
   }
 
+  let bidPrice: number | null = null;
+  if (bidPriceRaw !== undefined) {
+    if (typeof bidPriceRaw !== "number" || !Number.isInteger(bidPriceRaw) || bidPriceRaw < 0) {
+      res.status(400).json({ error: "bidPrice must be a non-negative integer" });
+      return;
+    }
+    bidPrice = bidPriceRaw;
+  }
+
   let jerseyNumber: number | null = null;
   if (jerseyNumberRaw !== undefined) {
     if (typeof jerseyNumberRaw !== "number" || !Number.isInteger(jerseyNumberRaw) || jerseyNumberRaw < 0) {
@@ -121,12 +198,39 @@ export async function addTournamentPlayer(req: Request, res: Response): Promise<
     jerseyNumber = jerseyNumberRaw;
   }
 
+  let jerseyName: string | null = null;
+  if (jerseyNameRaw !== undefined) {
+    if (typeof jerseyNameRaw !== "string" || !jerseyNameRaw.trim()) {
+      res.status(400).json({ error: "jerseyName must be a non-empty string" });
+      return;
+    }
+    jerseyName = jerseyNameRaw.trim();
+  }
+
   let jerseySize: JerseySize | null = null;
   if (jerseySizeRaw !== undefined) {
     const result = parseJerseySize(jerseySizeRaw);
     if ("error" in result) { res.status(400).json({ error: result.error }); return; }
     jerseySize = result.size;
   }
+
+  let auctionStatus: AuctionStatus | null = null;
+  if (auctionStatusRaw !== undefined) {
+    const result = parseAuctionStatus(auctionStatusRaw);
+    if ("error" in result) { res.status(400).json({ error: result.error }); return; }
+    auctionStatus = result.status;
+  }
+
+  let auctionRound: number | null = null;
+  if (auctionRoundRaw !== undefined) {
+    if (typeof auctionRoundRaw !== "number" || !Number.isInteger(auctionRoundRaw) || auctionRoundRaw < 1) {
+      res.status(400).json({ error: "auctionRound must be a positive integer" });
+      return;
+    }
+    auctionRound = auctionRoundRaw;
+  }
+
+  let isNew = true;
 
   try {
     const record = await prisma.$transaction(async (tx) => {
@@ -136,8 +240,30 @@ export async function addTournamentPlayer(req: Request, res: Response): Promise<
       });
       if (!tournament) throw Object.assign(new Error("Tournament not found"), { statusCode: 404 });
 
-      const user = await tx.user.findUnique({ where: { id: playerIdRaw }, select: { id: true } });
-      if (!user) throw Object.assign(new Error("Player (user) not found"), { statusCode: 400 });
+      let playerId: string;
+      if (validatedPlayer.kind === "userId") {
+        const user = await tx.user.findUnique({ where: { id: validatedPlayer.userId }, select: { id: true } });
+        if (!user) throw Object.assign(new Error("Player (user) not found"), { statusCode: 400 });
+        playerId = validatedPlayer.userId;
+      } else {
+        const user = await tx.user.upsert({
+          where: { phoneNumber: validatedPlayer.phone },
+          update: {},
+          create: { name: validatedPlayer.name, phoneNumber: validatedPlayer.phone },
+          select: { id: true },
+        });
+        playerId = user.id;
+      }
+
+      if (teamId !== null) {
+        const team = await tx.team.findUnique({
+          where: { id: teamId },
+          select: { id: true, isDeleted: true, tournamentId: true },
+        });
+        if (!team || team.isDeleted || team.tournamentId !== tournamentId) {
+          throw Object.assign(new Error("Team not found in this tournament"), { statusCode: 400 });
+        }
+      }
 
       if (roleId !== null) {
         const role = await tx.cricketRole.findUnique({ where: { id: roleId }, select: { id: true } });
@@ -145,32 +271,52 @@ export async function addTournamentPlayer(req: Request, res: Response): Promise<
       }
 
       const existing = await tx.tournamentPlayer.findUnique({
-        where: { tournamentId_playerId: { tournamentId, playerId: playerIdRaw } },
+        where: { tournamentId_playerId: { tournamentId, playerId } },
         select: { id: true, isDeleted: true },
       });
-      if (existing && !existing.isDeleted) {
-        throw Object.assign(new Error("Player is already registered in this tournament"), { statusCode: 409 });
-      }
 
-      const tournamentPlayer = existing
-        ? await tx.tournamentPlayer.update({
-            where: { id: existing.id },
-            data: { isDeleted: false, teamId: null, bidPrice: null, roleId, jerseyNumber, jerseySize },
-            include: tournamentPlayerInclude,
-          })
-        : await tx.tournamentPlayer.create({
-            data: { tournamentId, playerId: playerIdRaw, roleId, jerseyNumber, jerseySize },
-            include: tournamentPlayerInclude,
-          });
+      const allFields = { teamId, roleId, bidPrice, jerseyNumber, jerseyName, jerseySize, auctionStatus, auctionRound };
+
+      let tournamentPlayer;
+      if (!existing) {
+        tournamentPlayer = await tx.tournamentPlayer.create({
+          data: { tournamentId, playerId, ...allFields },
+          include: tournamentPlayerInclude,
+        });
+      } else if (existing.isDeleted) {
+        // Previously removed — reactivate and apply all provided fields
+        tournamentPlayer = await tx.tournamentPlayer.update({
+          where: { id: existing.id },
+          data: { isDeleted: false, ...allFields },
+          include: tournamentPlayerInclude,
+        });
+      } else {
+        // Already active — patch only the explicitly-provided fields
+        isNew = false;
+        const updateData: Prisma.TournamentPlayerUpdateInput = {};
+        if (teamId !== null) updateData.team = { connect: { id: teamId } };
+        if (roleId !== null) updateData.role = { connect: { id: roleId } };
+        if (bidPrice !== null) updateData.bidPrice = bidPrice;
+        if (jerseyNumber !== null) updateData.jerseyNumber = jerseyNumber;
+        if (jerseyName !== null) updateData.jerseyName = jerseyName;
+        if (jerseySize !== null) updateData.jerseySize = jerseySize;
+        if (auctionStatus !== null) updateData.auctionStatus = auctionStatus;
+        if (auctionRound !== null) updateData.auctionRound = auctionRound;
+        tournamentPlayer = await tx.tournamentPlayer.update({
+          where: { id: existing.id },
+          data: updateData,
+          include: tournamentPlayerInclude,
+        });
+      }
 
       // Backfill CricketPlayerProfile for any fields the client sent that aren't already set there
       if (roleId !== null || jerseyNumber !== null || jerseySize !== null) {
         const profile = await tx.cricketPlayerProfile.findUnique({
-          where: { userId: playerIdRaw },
+          where: { userId: playerId },
           select: { roleId: true, jerseyNumber: true, jerseySize: true, isDeleted: true },
         });
 
-        const fill: Prisma.CricketPlayerProfileCreateInput = { user: { connect: { id: playerIdRaw } } };
+        const fill: Prisma.CricketPlayerProfileCreateInput = { user: { connect: { id: playerId } } };
         const update: Prisma.CricketPlayerProfileUpdateInput = {};
 
         if (roleId !== null && (!profile || profile.roleId === null)) {
@@ -191,7 +337,7 @@ export async function addTournamentPlayer(req: Request, res: Response): Promise<
           if (!profile) {
             await tx.cricketPlayerProfile.create({ data: fill });
           } else if (!profile.isDeleted) {
-            await tx.cricketPlayerProfile.update({ where: { userId: playerIdRaw }, data: update });
+            await tx.cricketPlayerProfile.update({ where: { userId: playerId }, data: update });
           }
         }
       }
@@ -199,13 +345,14 @@ export async function addTournamentPlayer(req: Request, res: Response): Promise<
       return tournamentPlayer;
     });
 
-    res.status(201).json({ message: "Player added to tournament successfully", data: record });
+    const status = isNew ? 201 : 200;
+    const message = isNew ? "Player added to tournament successfully" : "Player updated successfully";
+    res.status(status).json({ message, data: record });
   } catch (e) {
     if (e instanceof Error && "statusCode" in e) {
       const code = (e as Error & { statusCode: number }).statusCode;
       if (code === 404) { res.status(404).json({ error: e.message }); return; }
       if (code === 400) { res.status(400).json({ error: e.message }); return; }
-      if (code === 409) { res.status(409).json({ error: e.message }); return; }
     }
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003") {
       res.status(400).json({ error: "A referenced id does not exist" });
@@ -234,7 +381,10 @@ export async function updateTournamentPlayer(req: Request, res: Response): Promi
     roleId: roleIdRaw,
     bidPrice: bidPriceRaw,
     jerseyNumber: jerseyNumberRaw,
+    jerseyName: jerseyNameRaw,
     jerseySize: jerseySizeRaw,
+    auctionStatus: auctionStatusRaw,
+    auctionRound: auctionRoundRaw,
   } = req.body ?? {};
 
   const data: Prisma.TournamentPlayerUpdateInput = {};
@@ -287,6 +437,18 @@ export async function updateTournamentPlayer(req: Request, res: Response): Promi
     }
   }
 
+  if (jerseyNameRaw !== undefined) {
+    if (jerseyNameRaw === null) {
+      data.jerseyName = null;
+    } else {
+      if (typeof jerseyNameRaw !== "string" || !jerseyNameRaw.trim()) {
+        res.status(400).json({ error: "jerseyName must be a non-empty string or null" });
+        return;
+      }
+      data.jerseyName = jerseyNameRaw.trim();
+    }
+  }
+
   if (jerseySizeRaw !== undefined) {
     if (jerseySizeRaw === null) {
       data.jerseySize = null;
@@ -294,6 +456,28 @@ export async function updateTournamentPlayer(req: Request, res: Response): Promi
       const result = parseJerseySize(jerseySizeRaw);
       if ("error" in result) { res.status(400).json({ error: result.error }); return; }
       data.jerseySize = result.size;
+    }
+  }
+
+  if (auctionStatusRaw !== undefined) {
+    if (auctionStatusRaw === null) {
+      data.auctionStatus = null;
+    } else {
+      const result = parseAuctionStatus(auctionStatusRaw);
+      if ("error" in result) { res.status(400).json({ error: result.error }); return; }
+      data.auctionStatus = result.status;
+    }
+  }
+
+  if (auctionRoundRaw !== undefined) {
+    if (auctionRoundRaw === null) {
+      data.auctionRound = null;
+    } else {
+      if (typeof auctionRoundRaw !== "number" || !Number.isInteger(auctionRoundRaw) || auctionRoundRaw < 1) {
+        res.status(400).json({ error: "auctionRound must be a positive integer" });
+        return;
+      }
+      data.auctionRound = auctionRoundRaw;
     }
   }
 
