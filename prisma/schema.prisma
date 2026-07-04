@@ -54,6 +54,25 @@ enum BallType {
   LEATHER
 }
 
+enum StageType {
+  GROUP
+  KNOCKOUT
+  ROUND_ROBIN
+}
+
+enum StageStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum FixtureStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
 model User {
   id          String    @id @default(uuid()) @db.Uuid
   name        String?
@@ -154,6 +173,8 @@ model Tournament {
   cricketTournamentConfig CricketTournamentConfig?
   teams         Team[]
   players       TournamentPlayer[]
+  stages        TournamentStage[]
+  fixtures      Fixture[]
 
   @@map("tournaments")
 }
@@ -190,6 +211,11 @@ model Team {
   updatedAt    DateTime   @updatedAt
 
   tournamentPlayers TournamentPlayer[]
+  groupTeams        GroupTeam[]
+  homeFixtures      Fixture[]         @relation("FixtureHomeTeam")
+  awayFixtures      Fixture[]         @relation("FixtureAwayTeam")
+  wonFixtures       Fixture[]         @relation("FixtureWinner")
+  byeFixtures       Fixture[]         @relation("FixtureBye")
 
   @@map("teams")
 }
@@ -264,4 +290,85 @@ model CricketTournamentConfig {
   updatedAt      DateTime   @updatedAt
 
   @@map("cricket_tournament_config")
+}
+
+model TournamentStage {
+  id                     String      @id @default(uuid()) @db.Uuid
+  tournamentId           String      @db.Uuid
+  tournament             Tournament  @relation(fields: [tournamentId], references: [id])
+  type                   StageType
+  order                  Int
+  name                   String
+  status                 StageStatus @default(PENDING)
+  numberOfGroups         Int?
+  teamsAdvancingPerGroup Int?
+  hasByes                Boolean?
+  teamsAdvancing         Int?
+  isDeleted              Boolean     @default(false)
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+
+  groups   Group[]
+  fixtures Fixture[]
+
+  @@map("tournament_stages")
+}
+
+model Group {
+  id        String          @id @default(uuid()) @db.Uuid
+  stageId   String          @db.Uuid
+  stage     TournamentStage @relation(fields: [stageId], references: [id])
+  name      String
+  order     Int
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  groupTeams GroupTeam[]
+  fixtures   Fixture[]
+
+  @@map("groups")
+}
+
+model GroupTeam {
+  id           String   @id @default(uuid()) @db.Uuid
+  groupId      String   @db.Uuid
+  group        Group    @relation(fields: [groupId], references: [id])
+  teamId       String   @db.Uuid
+  team         Team     @relation(fields: [teamId], references: [id])
+  seed         Int?
+  drawPosition Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([groupId, teamId])
+  @@map("group_teams")
+}
+
+model Fixture {
+  id           String          @id @default(uuid()) @db.Uuid
+  tournamentId String          @db.Uuid
+  tournament   Tournament      @relation(fields: [tournamentId], references: [id])
+  stageId      String          @db.Uuid
+  stage        TournamentStage @relation(fields: [stageId], references: [id])
+  groupId      String?         @db.Uuid
+  group        Group?          @relation(fields: [groupId], references: [id])
+  homeTeamId   String?         @db.Uuid
+  homeTeam     Team?           @relation("FixtureHomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId   String?         @db.Uuid
+  awayTeam     Team?           @relation("FixtureAwayTeam", fields: [awayTeamId], references: [id])
+  winnerId     String?         @db.Uuid
+  winner       Team?           @relation("FixtureWinner", fields: [winnerId], references: [id])
+  isBye        Boolean         @default(false)
+  byeTeamId    String?         @db.Uuid
+  byeTeam      Team?           @relation("FixtureBye", fields: [byeTeamId], references: [id])
+  homeTeamSlot Json?
+  awayTeamSlot Json?
+  roundNumber  Int             @default(1)
+  status       FixtureStatus   @default(SCHEDULED)
+  scheduledAt  DateTime?
+  isDeleted    Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@map("fixtures")
 }
