@@ -73,6 +73,11 @@ enum FixtureStatus {
   CANCELLED
 }
 
+enum TossChoice {
+  BAT
+  BOWL
+}
+
 model User {
   id          String    @id @default(uuid()) @db.Uuid
   name        String?
@@ -320,6 +325,7 @@ model Group {
   stage     TournamentStage @relation(fields: [stageId], references: [id])
   name      String
   order     Int
+  isDeleted Boolean         @default(false)
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
@@ -337,6 +343,7 @@ model GroupTeam {
   team         Team     @relation(fields: [teamId], references: [id])
   seed         Int?
   drawPosition Int?
+  isDeleted    Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -370,5 +377,25 @@ model Fixture {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
+  cricketMatchResult CricketMatchResult?
+
   @@map("fixtures")
+}
+
+model CricketMatchResult {
+  id            String      @id @default(uuid()) @db.Uuid
+  fixtureId     String      @unique @db.Uuid
+  fixture       Fixture     @relation(fields: [fixtureId], references: [id])
+  homeRuns      Int
+  homeWickets   Int
+  homeBalls     Int
+  awayRuns      Int
+  awayWickets   Int
+  awayBalls     Int
+  tossWinnerId  String?     @db.Uuid
+  tossChoice    TossChoice?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("cricket_match_results")
 }

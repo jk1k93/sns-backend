@@ -59,7 +59,24 @@ export async function listStages(req: Request, res: Response): Promise<void> {
       orderBy: { order: "asc" },
     });
 
-    res.status(200).json({ message: "Stages fetched successfully", data: stages });
+    const stageIds = stages.map((s) => s.id);
+    const [totalCounts, completedCounts] = stageIds.length > 0
+      ? await Promise.all([
+          prisma.fixture.groupBy({ by: ["stageId"], where: { stageId: { in: stageIds }, isDeleted: false }, _count: { id: true } }),
+          prisma.fixture.groupBy({ by: ["stageId"], where: { stageId: { in: stageIds }, isDeleted: false, status: "COMPLETED" }, _count: { id: true } }),
+        ])
+      : [[], []];
+
+    const totalMap = new Map(totalCounts.map((r) => [r.stageId, r._count.id]));
+    const completedMap = new Map(completedCounts.map((r) => [r.stageId, r._count.id]));
+
+    const data = stages.map((s) => ({
+      ...s,
+      totalFixtures: totalMap.get(s.id) ?? 0,
+      completedFixtures: completedMap.get(s.id) ?? 0,
+    }));
+
+    res.status(200).json({ message: "Stages fetched successfully", data });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch stages" });
@@ -180,7 +197,7 @@ export async function createStages(req: Request, res: Response): Promise<void> {
       }),
     );
 
-    const sorted = created.sort((a, b) => a.order - b.order);
+    const sorted = created.sort((a, b) => a.order - b.order).map((s) => ({ ...s, totalFixtures: 0, completedFixtures: 0 }));
     res.status(201).json({ message: "Stages created successfully", data: sorted });
   } catch (e) {
     console.error(e);
