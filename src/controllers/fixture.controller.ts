@@ -1041,10 +1041,13 @@ function buildStandingsMap(
   };
 
   for (const f of fixtures) {
-    if (!f.cricketMatchResult || !f.homeTeam || !f.awayTeam || f.status !== FixtureStatus.COMPLETED) continue;
+    if (!f.homeTeam || !f.awayTeam) continue;
 
     const home = ensure(f.homeTeam);
     const away = ensure(f.awayTeam);
+
+    if (!f.cricketMatchResult || f.status !== FixtureStatus.COMPLETED) continue;
+
     const r = f.cricketMatchResult;
 
     home.runsScored += r.homeRuns;
@@ -1080,9 +1083,11 @@ function buildStandingsMap(
 }
 
 function sortStandings(standings: TeamStanding[]): TeamStanding[] {
-  return standings.sort((a, b) =>
-    b.points !== a.points ? b.points - a.points : b.nrr - a.nrr,
-  );
+  return standings.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.nrr !== a.nrr) return b.nrr - a.nrr;
+    return a.team.name.localeCompare(b.team.name);
+  });
 }
 
 // POST /tournaments/:id/fixtures/:fixtureId/result
