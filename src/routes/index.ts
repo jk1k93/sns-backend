@@ -10,6 +10,7 @@ import { teamRouter } from "./team.routes.js";
 import { tournamentPlayerRouter } from "./tournament-player.routes.js";
 import { cricketRoleRouter } from "./cricket-role.routes.js";
 import { cricketPlayerProfileRouter } from "./cricket-player-profile.routes.js";
+import { fixtureRouter } from "./fixture.routes.js";
 
 const router = Router();
 
@@ -24,5 +25,6 @@ router.use("/tournaments/:tournamentId/teams", teamRouter);
 router.use("/tournaments/:tournamentId/players", tournamentPlayerRouter);
 router.use("/cricket-roles", cricketRoleRouter);
 router.use("/cricket-player-profiles", cricketPlayerProfileRouter);
+router.use("/tournaments", fixtureRouter);
 
 export default router;
