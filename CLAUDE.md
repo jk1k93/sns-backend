@@ -51,7 +51,7 @@ Controllers directly import `prisma` from `src/db.ts` and handle all DB interact
 - **Sport** — reference data; `isActive` flag
 - **City** — reference data keyed by Google `placeId`
 - **Venue** — belongs to a City
-- **Tournament** — belongs to Venue, Sport, and organiser (User); `TournamentStatus` enum: `DRAFT | PUBLISHED | CANCELLED | ARCHIVED`; soft-deleted via `isDeleted`
+- **Tournament** — belongs to Venue, Sport, and organiser (User); `TournamentStatus` enum: `PUBLISHED | LIVE | CANCELLED | COMPLETED`; soft-deleted via `isDeleted`
 - **TournamentContact** — join table between Tournament and User; soft-deleted via `isDeleted`; unique on `(tournamentId, userId)`
 
 ## Auth flow
@@ -85,7 +85,7 @@ Contacts can be provided as either a `userId` (existing user UUID) or `{ name, p
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string (Neon-hosted) |
+| `DATABASE_URL` | PostgreSQL connection string (Neon-hosted, pooled endpoint) |
 | `JWT_SECRET` | Secret for signing/verifying JWTs |
 | `JWT_EXPIRES_IN` | JWT expiry (default `"7d"`) |
 | `PORT` | Server port (default `8080`) |

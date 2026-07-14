@@ -17,6 +17,8 @@ const CRICKET_ROLES = [
   "Wicket Keeper Batsman",
 ];
 
+const SPORTS = ["Cricket", "Badminton", "Football"];
+
 async function main() {
   for (const name of CRICKET_ROLES) {
     await prisma.cricketRole.upsert({
@@ -26,6 +28,15 @@ async function main() {
     });
   }
   console.log(`Seeded ${CRICKET_ROLES.length} cricket roles`);
+
+  for (const name of SPORTS) {
+    await prisma.sport.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+  }
+  console.log(`Seeded ${SPORTS.length} sports`);
 }
 
 main()
