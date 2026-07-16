@@ -138,11 +138,12 @@ export async function generateFixtures(req: Request, res: Response): Promise<voi
     }
 
     if (stage.type === StageType.ROUND_ROBIN) {
-      const teams = await prisma.team.findMany({
-        where: { tournamentId, isDeleted: false },
-        select: { id: true },
-        orderBy: { createdAt: "asc" },
-      });
+      const eligible = await resolveEligibleTeams(tournamentId, stage);
+      if ("error" in eligible) {
+        res.status(eligible.status).json({ error: eligible.error });
+        return;
+      }
+      const teams = eligible.teams;
       if (teams.length < 2) {
         res.status(400).json({ error: "At least 2 teams are required to generate fixtures" });
         return;
@@ -446,7 +447,7 @@ export async function groupDraw(req: Request, res: Response): Promise<void> {
   try {
     const stage = await prisma.tournamentStage.findUnique({
       where: { id: stageId },
-      select: { id: true, tournamentId: true, isDeleted: true, type: true, numberOfGroups: true },
+      select: { id: true, tournamentId: true, isDeleted: true, type: true, order: true, numberOfGroups: true },
     });
     if (!stage || stage.isDeleted || stage.tournamentId !== tournamentId) {
       res.status(404).json({ error: "Stage not found" });
@@ -471,11 +472,12 @@ export async function groupDraw(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    const teams = await prisma.team.findMany({
-      where: { tournamentId, isDeleted: false },
-      select: { id: true, name: true, shortCode: true },
-      orderBy: { createdAt: "asc" },
-    });
+    const eligible = await resolveEligibleTeams(tournamentId, stage);
+    if ("error" in eligible) {
+      res.status(eligible.status).json({ error: eligible.error });
+      return;
+    }
+    const teams = eligible.teams;
     if (teams.length < n) {
       res.status(400).json({ error: `Need at least ${n} teams to fill ${n} groups` });
       return;
@@ -754,6 +756,98 @@ export async function createKnockoutFixture(req: Request, res: Response): Promis
   }
 }
 
+type EligibleTeam = { id: string; name: string; shortCode: string | null; logoUrl: string | null };
+
+const eligibleTeamSelect = { id: true, name: true, shortCode: true, logoUrl: true } as const;
+
+async function resolveEligibleTeams(
+  tournamentId: string,
+  stage: { order: number },
+): Promise<{ error: string; status: number } | { teams: EligibleTeam[] }> {
+  if (stage.order === 1) {
+    const teams = await prisma.team.findMany({
+      where: { tournamentId, isDeleted: false },
+      select: eligibleTeamSelect,
+      orderBy: { createdAt: "asc" },
+    });
+    return { teams };
+  }
+
+  const prevStage = await prisma.tournamentStage.findFirst({
+    where: { tournamentId, order: stage.order - 1, isDeleted: false },
+    select: { id: true, type: true, status: true, teamsAdvancing: true, teamsAdvancingPerGroup: true },
+  });
+
+  if (!prevStage) {
+    const teams = await prisma.team.findMany({
+      where: { tournamentId, isDeleted: false },
+      select: eligibleTeamSelect,
+      orderBy: { createdAt: "asc" },
+    });
+    return { teams };
+  }
+
+  if (prevStage.status !== StageStatus.COMPLETED) {
+    return { error: "Previous stage is not yet completed", status: 400 };
+  }
+
+  if (prevStage.type === StageType.ROUND_ROBIN) {
+    const fixtures = await prisma.fixture.findMany({
+      where: { stageId: prevStage.id, isDeleted: false, isBye: false },
+      select: fixtureResultSelect,
+    });
+    const sorted = sortStandings([...buildStandingsMap(fixtures).values()]);
+    const topN = prevStage.teamsAdvancing ?? sorted.length;
+    return { teams: sorted.slice(0, topN).map((s) => s.team) };
+  }
+
+  if (prevStage.type === StageType.GROUP) {
+    const [fixtures, groups] = await Promise.all([
+      prisma.fixture.findMany({
+        where: { stageId: prevStage.id, isDeleted: false, isBye: false },
+        select: fixtureResultSelect,
+      }),
+      prisma.group.findMany({
+        where: { stageId: prevStage.id, isDeleted: false },
+        orderBy: { order: "asc" },
+        select: { id: true },
+      }),
+    ]);
+    const topN = prevStage.teamsAdvancingPerGroup ?? 1;
+    const advancingTeams: EligibleTeam[] = [];
+    for (const g of groups) {
+      const sorted = sortStandings([
+        ...buildStandingsMap(fixtures.filter((f) => f.groupId === g.id)).values(),
+      ]);
+      advancingTeams.push(...sorted.slice(0, topN).map((s) => s.team));
+    }
+    return { teams: advancingTeams };
+  }
+
+  // KNOCKOUT previous stage — status already confirmed COMPLETED above
+  const prevFixtures = await prisma.fixture.findMany({
+    where: { stageId: prevStage.id, isDeleted: false },
+    select: {
+      isBye: true,
+      byeTeamId: true,
+      byeTeam: { select: eligibleTeamSelect },
+      winnerId: true,
+      winner: { select: eligibleTeamSelect },
+    },
+  });
+
+  const teams: EligibleTeam[] = [];
+  for (const f of prevFixtures) {
+    if (f.isBye && f.byeTeam) {
+      teams.push(f.byeTeam);
+    } else if (f.winner) {
+      teams.push(f.winner);
+    }
+  }
+
+  return { teams };
+}
+
 export async function getEligibleTeams(req: Request, res: Response): Promise<void> {
   const tournamentId = paramId(req.params.id);
   const stageId = paramId(req.params.stageId);
@@ -776,98 +870,13 @@ export async function getEligibleTeams(req: Request, res: Response): Promise<voi
       return;
     }
 
-    const teamSelect = { id: true, name: true, shortCode: true, logoUrl: true } as const;
-
-    if (stage.order === 1) {
-      const teams = await prisma.team.findMany({
-        where: { tournamentId, isDeleted: false },
-        select: teamSelect,
-        orderBy: { createdAt: "asc" },
-      });
-      res.status(200).json({ message: "Eligible teams fetched successfully", data: teams });
+    const result = await resolveEligibleTeams(tournamentId, stage);
+    if ("error" in result) {
+      res.status(result.status).json({ error: result.error });
       return;
     }
 
-    const prevStage = await prisma.tournamentStage.findFirst({
-      where: { tournamentId, order: stage.order - 1, isDeleted: false },
-      select: { id: true, type: true, status: true, teamsAdvancing: true, teamsAdvancingPerGroup: true },
-    });
-
-    if (!prevStage) {
-      const teams = await prisma.team.findMany({
-        where: { tournamentId, isDeleted: false },
-        select: teamSelect,
-        orderBy: { createdAt: "asc" },
-      });
-      res.status(200).json({ message: "Eligible teams fetched successfully", data: teams });
-      return;
-    }
-
-    if (prevStage.status !== StageStatus.COMPLETED) {
-      res.status(400).json({ error: "Previous stage is not yet completed" });
-      return;
-    }
-
-    if (prevStage.type === StageType.ROUND_ROBIN) {
-      const fixtures = await prisma.fixture.findMany({
-        where: { stageId: prevStage.id, isDeleted: false, isBye: false },
-        select: fixtureResultSelect,
-      });
-      const sorted = sortStandings([...buildStandingsMap(fixtures).values()]);
-      const topN = prevStage.teamsAdvancing ?? sorted.length;
-      res.status(200).json({
-        message: "Eligible teams fetched successfully",
-        data: sorted.slice(0, topN).map((s) => s.team),
-      });
-      return;
-    }
-
-    if (prevStage.type === StageType.GROUP) {
-      const [fixtures, groups] = await Promise.all([
-        prisma.fixture.findMany({
-          where: { stageId: prevStage.id, isDeleted: false, isBye: false },
-          select: fixtureResultSelect,
-        }),
-        prisma.group.findMany({
-          where: { stageId: prevStage.id, isDeleted: false },
-          orderBy: { order: "asc" },
-          select: { id: true },
-        }),
-      ]);
-      const topN = prevStage.teamsAdvancingPerGroup ?? 1;
-      const advancingTeams: { id: string; name: string; shortCode: string | null; logoUrl: string | null }[] = [];
-      for (const g of groups) {
-        const sorted = sortStandings([
-          ...buildStandingsMap(fixtures.filter((f) => f.groupId === g.id)).values(),
-        ]);
-        advancingTeams.push(...sorted.slice(0, topN).map((s) => s.team));
-      }
-      res.status(200).json({ message: "Eligible teams fetched successfully", data: advancingTeams });
-      return;
-    }
-
-    // KNOCKOUT previous stage — status already confirmed COMPLETED above
-    const prevFixtures = await prisma.fixture.findMany({
-      where: { stageId: prevStage.id, isDeleted: false },
-      select: {
-        isBye: true,
-        byeTeamId: true,
-        byeTeam: { select: teamSelect },
-        winnerId: true,
-        winner: { select: teamSelect },
-      },
-    });
-
-    const teams: { id: string; name: string; shortCode: string | null; logoUrl: string | null }[] = [];
-    for (const f of prevFixtures) {
-      if (f.isBye && f.byeTeam) {
-        teams.push(f.byeTeam);
-      } else if (f.winner) {
-        teams.push(f.winner);
-      }
-    }
-
-    res.status(200).json({ message: "Eligible teams fetched successfully", data: teams });
+    res.status(200).json({ message: "Eligible teams fetched successfully", data: result.teams });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Failed to fetch eligible teams" });
