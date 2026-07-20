@@ -78,6 +78,37 @@ enum TossChoice {
   BOWL
 }
 
+enum ExtraType {
+  NONE
+  WIDE
+  NO_BALL
+  BYE
+  LEG_BYE
+  PENALTY
+}
+
+enum WicketType {
+  BOWLED
+  CAUGHT
+  RUN_OUT
+  STUMPED
+  LBW
+  HIT_WICKET
+  RETIRED_OUT
+  OTHER
+}
+
+enum InningsStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum LineupParticipationType {
+  STARTING
+  SUBSTITUTE
+}
+
 model User {
   id          String    @id @default(uuid()) @db.Uuid
   name        String?
@@ -221,6 +252,9 @@ model Team {
   awayFixtures      Fixture[]         @relation("FixtureAwayTeam")
   wonFixtures       Fixture[]         @relation("FixtureWinner")
   byeFixtures       Fixture[]         @relation("FixtureBye")
+  battingInnings    CricketInnings[]  @relation("InningsBattingTeam")
+  bowlingInnings    CricketInnings[]  @relation("InningsBowlingTeam")
+  fixtureLineUps    CricketFixtureLineUp[]
 
   @@map("teams")
 }
@@ -244,6 +278,8 @@ model TournamentPlayer {
   isDeleted      Boolean     @default(false)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+
+  fixtureLineUps CricketFixtureLineUp[]
 
   @@unique([tournamentId, playerId])
   @@map("tournament_players")
@@ -290,6 +326,8 @@ model CricketTournamentConfig {
   auctionBased      Boolean  @default(false)
   auctionPurse      Int?
   playerBasePrice   Int?
+  oversPerInnings   Int
+  freeHitEnabled    Boolean    @default(true)
   isDeleted      Boolean    @default(false)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
@@ -378,8 +416,31 @@ model Fixture {
   updatedAt    DateTime        @updatedAt
 
   cricketMatchResult CricketMatchResult?
+  cricketInnings     CricketInnings[]
+  lineUps            CricketFixtureLineUp[]
+
+  oversPerInnings Int?
+  freeHitEnabled  Boolean?
 
   @@map("fixtures")
+}
+
+model CricketFixtureLineUp {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  fixtureId          String                  @db.Uuid
+  fixture            Fixture                 @relation(fields: [fixtureId], references: [id])
+  teamId             String                  @db.Uuid
+  team               Team                    @relation(fields: [teamId], references: [id])
+  tournamentPlayerId String                  @db.Uuid
+  tournamentPlayer   TournamentPlayer        @relation(fields: [tournamentPlayerId], references: [id])
+  isCaptain          Boolean                 @default(false)
+  participationType  LineupParticipationType
+  isDeleted          Boolean                 @default(false)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@unique([fixtureId, tournamentPlayerId])
+  @@map("cricket_fixture_lineups")
 }
 
 model CricketMatchResult {
@@ -398,4 +459,52 @@ model CricketMatchResult {
   updatedAt     DateTime    @updatedAt
 
   @@map("cricket_match_results")
+}
+
+model CricketInnings {
+  id               String        @id @default(uuid()) @db.Uuid
+  fixtureId        String        @db.Uuid
+  fixture          Fixture       @relation(fields: [fixtureId], references: [id])
+  inningsNumber    Int           // 1 or 2
+  battingTeamId    String        @db.Uuid
+  battingTeam      Team          @relation("InningsBattingTeam", fields: [battingTeamId], references: [id])
+  bowlingTeamId    String        @db.Uuid
+  bowlingTeam      Team          @relation("InningsBowlingTeam", fields: [bowlingTeamId], references: [id])
+  oversLimit       Int
+  status           InningsStatus @default(NOT_STARTED)
+  target           Int?          // set on innings 2 = innings 1 total + 1
+  currentStrikerId    String?    @db.Uuid
+  currentNonStrikerId String?    @db.Uuid
+  currentBowlerId     String?    @db.Uuid
+  isDeleted        Boolean       @default(false)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  deliveries CricketDelivery[]
+
+  @@unique([fixtureId, inningsNumber])
+  @@map("cricket_innings")
+}
+
+model CricketDelivery {
+  id              String      @id @default(uuid()) @db.Uuid
+  inningsId       String      @db.Uuid
+  innings         CricketInnings @relation(fields: [inningsId], references: [id])
+  sequence        Int         // global order within the innings; undo = delete max(sequence)
+  overNumber      Int         // 0-indexed
+  ballNumber      Int         // 1-6, legal balls only
+  strikerId       String      @db.Uuid
+  nonStrikerId    String      @db.Uuid
+  bowlerId        String      @db.Uuid
+  runsBat         Int         @default(0)
+  extraType       ExtraType   @default(NONE)
+  extraRuns       Int         @default(0)
+  isWicket        Boolean     @default(false)
+  wicketType      WicketType?
+  dismissedPlayerId String?   @db.Uuid  // striker or non-striker (run-out)
+  fielderId       String?     @db.Uuid
+  createdAt       DateTime    @default(now())
+
+  @@unique([inningsId, sequence])
+  @@map("cricket_deliveries")
 }

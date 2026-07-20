@@ -30,7 +30,7 @@ export async function createCricketConfig(req: Request, res: Response): Promise<
     return;
   }
 
-  const { groundType, ballType, numberOfTeams, playersPerTeam, auctionBased, auctionPurse, playerBasePrice } = req.body ?? {};
+  const { groundType, ballType, numberOfTeams, playersPerTeam, auctionBased, auctionPurse, playerBasePrice, oversPerInnings, freeHitEnabled } = req.body ?? {};
 
   const validGroundTypes = Object.values(GroundType);
   if (!validGroundTypes.includes(groundType)) {
@@ -53,6 +53,17 @@ export async function createCricketConfig(req: Request, res: Response): Promise<
     res.status(400).json({ error: "playersPerTeam must be a positive integer" });
     return;
   }
+
+  if (!isPositiveInt(oversPerInnings)) {
+    res.status(400).json({ error: "oversPerInnings must be a positive integer" });
+    return;
+  }
+
+  if (freeHitEnabled !== undefined && typeof freeHitEnabled !== "boolean") {
+    res.status(400).json({ error: "freeHitEnabled must be a boolean" });
+    return;
+  }
+  const freeHitEnabledValue: boolean = freeHitEnabled ?? true;
 
   if (auctionBased !== undefined && typeof auctionBased !== "boolean") {
     res.status(400).json({ error: "auctionBased must be a boolean" });
@@ -106,6 +117,8 @@ export async function createCricketConfig(req: Request, res: Response): Promise<
       auctionBased: auctionBasedValue,
       auctionPurse: auctionPurseValue,
       playerBasePrice: playerBasePriceValue,
+      oversPerInnings,
+      freeHitEnabled: freeHitEnabledValue,
     };
 
     const config = existing
@@ -126,7 +139,7 @@ export async function updateCricketConfig(req: Request, res: Response): Promise<
     return;
   }
 
-  const { groundType, ballType, numberOfTeams, playersPerTeam, auctionBased, auctionPurse, playerBasePrice } = req.body ?? {};
+  const { groundType, ballType, numberOfTeams, playersPerTeam, auctionBased, auctionPurse, playerBasePrice, oversPerInnings, freeHitEnabled } = req.body ?? {};
 
   const data: {
     groundType?: GroundType;
@@ -136,6 +149,8 @@ export async function updateCricketConfig(req: Request, res: Response): Promise<
     auctionBased?: boolean;
     auctionPurse?: number | null;
     playerBasePrice?: number | null;
+    oversPerInnings?: number;
+    freeHitEnabled?: boolean;
   } = {};
 
   if (groundType !== undefined) {
@@ -182,6 +197,22 @@ export async function updateCricketConfig(req: Request, res: Response): Promise<
       data.auctionPurse = null;
       data.playerBasePrice = null;
     }
+  }
+
+  if (oversPerInnings !== undefined) {
+    if (!isPositiveInt(oversPerInnings)) {
+      res.status(400).json({ error: "oversPerInnings must be a positive integer" });
+      return;
+    }
+    data.oversPerInnings = oversPerInnings;
+  }
+
+  if (freeHitEnabled !== undefined) {
+    if (typeof freeHitEnabled !== "boolean") {
+      res.status(400).json({ error: "freeHitEnabled must be a boolean" });
+      return;
+    }
+    data.freeHitEnabled = freeHitEnabled;
   }
 
   // Only apply auction-specific fields if auctionBased is not being explicitly set to false

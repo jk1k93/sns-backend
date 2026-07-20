@@ -4,7 +4,7 @@ import { prisma } from "../db.js";
 import { isUuid, paramId } from "../helpers/query.helper.js";
 import { parseDate } from "../helpers/date.helper.js";
 
-const fixtureSelect = {
+export const fixtureSelect = {
   id: true,
   tournamentId: true,
   stageId: true,
@@ -19,11 +19,29 @@ const fixtureSelect = {
   roundNumber: true,
   scheduledAt: true,
   status: true,
+  oversPerInnings: true,
+  freeHitEnabled: true,
   cricketMatchResult: {
     select: {
       homeRuns: true, homeWickets: true, homeBalls: true,
       awayRuns: true, awayWickets: true, awayBalls: true,
       tossWinnerId: true, tossChoice: true,
+    },
+  },
+  cricketInnings: {
+    where: { isDeleted: false },
+    orderBy: { inningsNumber: "asc" },
+    select: {
+      id: true,
+      inningsNumber: true,
+      battingTeamId: true,
+      bowlingTeamId: true,
+      oversLimit: true,
+      status: true,
+      target: true,
+      currentStrikerId: true,
+      currentNonStrikerId: true,
+      currentBowlerId: true,
     },
   },
 } as const;
@@ -58,7 +76,7 @@ function bracketRoundName(round: number, totalRounds: number): string {
   return `Round ${round}`;
 }
 
-async function assertTournamentAccess(
+export async function assertTournamentAccess(
   tournamentId: string,
   userId: string,
 ): Promise<{ error: string; status: number } | null> {
